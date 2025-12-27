@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
-import hashlib # 用來計算顏色
+import hashlib
 from datetime import datetime, date
 
 # 嘗試載入日曆組件
@@ -10,7 +10,7 @@ try:
 except ImportError:
     st.error("請先安裝套件：pip install streamlit-calendar")
 
-# --- 1. 檔案設定 (固定檔名，資料永不遺失) ---
+# --- 1. 檔案設定 (固定檔名) ---
 DB_FILE = "gym_lessons.csv"
 REQ_FILE = "gym_requests.csv"
 STU_FILE = "gym_students.csv"
@@ -19,7 +19,7 @@ COACH_PASSWORD = "1234"
 
 st.set_page_config(page_title="林芸健身", layout="wide", initial_sidebar_state="collapsed")
 
-# 欄位定義標準
+# 欄位定義
 SCHEMA = {
     DB_FILE: ["日期", "時間", "學員", "課程種類", "備註"],
     REQ_FILE: ["日期", "時間", "姓名", "留言"],
@@ -76,34 +76,28 @@ df_db, df_stu, df_req, df_cat = load_and_fix_data()
 
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
 
-# 修正處：這裡修正了語法錯誤 (把邏輯拆開寫最安全)
+# --- 這裡修正了之前導致 SyntaxError 的語法 ---
 ALL_CATEGORIES = df_cat["類別名稱"].tolist()
+# 防呆：把目前課程表裡有的類別也加進來，避免編輯器報錯
+existing_cats = df_db["課程種類"].unique().tolist() if not df_db.empty else []
+for ec in existing_cats:
+    if ec and ec not in ALL_CATEGORIES:
+        ALL_CATEGORIES.append(ec)
 if not ALL_CATEGORIES:
     ALL_CATEGORIES = ["(請設定)"]
 
 # ==================== 2. 全域大日曆 ====================
 st.subheader("🗓️ 課程總覽")
 
-# 定義一個自動配色的函數
+# 自動配色函數 (支援林口、蘆洲等自訂名稱)
 def get_category_color(cat_name):
     cat_str = str(cat_name)
-    # 1. 核心課程保留固定色
-    if "MA" in cat_str: return "#D32F2F" # 紅色
-    if "S" in cat_str: return "#1976D2" # 藍色
-    if "一般" in cat_str: return "#388E3C" # 綠色
+    if "MA" in cat_str: return "#D32F2F" # 紅
+    if "S" in cat_str: return "#1976D2" # 藍
+    if "一般" in cat_str: return "#388E3C" # 綠
     
-    # 2. 自訂課程 (林口、蘆洲...) 自動分配顏色
-    # 這裡準備了一個漂亮的調色盤
-    palette = [
-        "#F57C00", # 橘色
-        "#7B1FA2", # 紫色
-        "#00796B", # 藍綠色
-        "#C2185B", # 桃紅色
-        "#5D4037", # 咖啡色
-        "#303F9F", # 靛青色
-        "#E64A19"  # 深橘
-    ]
-    # 使用名稱的雜湊值來固定選一個顏色，這樣「林口」永遠會是同一個顏色
+    # 其他自訂課程：自動產生顏色
+    palette = ["#F57C00", "#7B1FA2", "#00796B", "#C2185B", "#5D4037", "#303F9F", "#E64A19"]
     hash_val = int(hashlib.sha256(cat_str.encode('utf-8')).hexdigest(), 16)
     return palette[hash_val % len(palette)]
 
@@ -111,7 +105,6 @@ events = []
 for _, row in df_db.iterrows():
     if pd.isna(row['日期']): continue
     
-    # 取得自動分配的顏色
     theme_color = get_category_color(row['課程種類'])
     
     try:
@@ -160,7 +153,7 @@ calendar_options = {
         "listMonth": { "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" } }
     }
 }
-calendar(events=events, options=calendar_options, key="cal_v25_auto_color")
+calendar(events=events, options=calendar_options, key="cal_v26_fix_delete")
 st.divider()
 
 # ==================== 3. 身份導覽 ====================
@@ -172,9 +165,7 @@ if mode == "🔍 學員查詢":
     
     if not day_view.empty:
         for _, row in day_view.iterrows():
-            # 這裡也用一樣的邏輯來顯示前面的小圓點
             c_code = get_category_color(row['課程種類'])
-            # 由於 st.info 不能自訂顏色，這裡用 HTML 語法模擬有色圓點
             st.markdown(f"""
             <div style="padding: 10px; border-radius: 5px; background-color: #f0f2f6; border-left: 5px solid {c_code}; margin-bottom: 10px;">
                 <b>{row['時間']}</b> &nbsp; 👤 <b>{row['學員']}</b> <br>
@@ -234,10 +225,20 @@ else:
                     else: st.error("未選人")
 
         with t2:
-            st.info("💡 如果日曆上的字是黑色的，請在這裡補上『項目』，顏色就會出現了！")
+            st.info("💡 操作教學：勾選左側框框後按 Delete 鍵即可刪除，完成後記得按『儲存』。")
             ed = st.date_input("修課日期", date.today())
             mask = df_db["日期"] == ed
-            edited = st.data_editor(df_db[mask], num_rows="dynamic", use_container_width=True, column_config={"課程種類":"項目", "備註":"備註", "學員":"姓名"})
+            # 這裡加上了 ALL_CATEGORIES 確保選單不會因為資料庫有怪名字而崩潰
+            edited = st.data_editor(
+                df_db[mask], 
+                num_rows="dynamic", 
+                use_container_width=True, 
+                column_config={
+                    "課程種類": st.column_config.SelectboxColumn("項目", options=ALL_CATEGORIES),
+                    "備註": "備註", 
+                    "學員": "姓名"
+                }
+            )
             if st.button("💾 儲存", use_container_width=True):
                 pd.concat([df_db[~mask], edited], ignore_index=True).to_csv(DB_FILE, index=False); st.rerun()
 
