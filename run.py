@@ -152,7 +152,7 @@ calendar_options = {
         "listMonth": { "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" } }
     }
 }
-calendar(events=events, options=calendar_options, key="cal_v28_restore")
+calendar(events=events, options=calendar_options, key="cal_v29_stats")
 st.divider()
 
 # ==================== 3. 身份導覽 ====================
@@ -197,7 +197,8 @@ if mode == "🔍 學員查詢":
 else:
     pwd = st.text_input("密碼", type="password")
     if pwd == COACH_PASSWORD:
-        t1, t2, t3, t4, t5, t6 = st.tabs(["排課", "編輯", "名單", "設定", "留言", "💾 備份與還原"])
+        # 新增第七個分頁：統計報表
+        t1, t2, t3, t4, t5, t6, t7 = st.tabs(["排課", "編輯", "名單", "設定", "留言", "💾 備份", "📊 統計報表"])
         
         with t1:
             st.caption("🚀 快速排課")
@@ -267,41 +268,53 @@ else:
             if st.button("🗑️ 清空", use_container_width=True):
                 pd.DataFrame(columns=["日期", "時間", "姓名", "留言"]).to_csv(REQ_FILE, index=False); st.rerun()
 
-        # 新增：備份與還原
         with t6:
             st.subheader("💾 資料庫管理")
-            
             c1, c2 = st.columns(2)
-            
             with c1:
-                st.markdown("### 1️⃣ 備份下載 (Export)")
-                st.write("將目前的系統資料打包下載。")
+                st.markdown("### 1️⃣ 備份下載")
                 buf = io.BytesIO()
                 with zipfile.ZipFile(buf, "x", zipfile.ZIP_DEFLATED) as zf:
                     for f in [DB_FILE, REQ_FILE, STU_FILE, CAT_FILE]:
                         if os.path.exists(f): zf.write(f)
-                
-                st.download_button(
-                    label="⬇️ 下載備份 ZIP",
-                    data=buf.getvalue(),
-                    file_name=f"gym_backup_{datetime.now().strftime('%Y%m%d_%H%M')}.zip",
-                    mime="application/zip",
-                    type="primary"
-                )
-                
+                st.download_button(label="⬇️ 下載備份 ZIP", data=buf.getvalue(), file_name=f"gym_backup_{datetime.now().strftime('%Y%m%d_%H%M')}.zip", mime="application/zip", type="primary")
             with c2:
-                st.markdown("### 2️⃣ 系統還原 (Import)")
-                st.write("上傳 ZIP 檔以恢復舊資料 (會覆蓋目前資料)。")
-                uploaded_zip = st.file_uploader("選擇備份檔", type="zip")
+                st.markdown("### 2️⃣ 系統還原")
+                uploaded_zip = st.file_uploader("上傳備份檔 (ZIP)", type="zip")
                 if uploaded_zip is not None:
-                    if st.button("🚨 確認還原資料", type="secondary"):
+                    if st.button("🚨 確認還原", type="secondary"):
                         try:
-                            with zipfile.ZipFile(uploaded_zip, "r") as z:
-                                z.extractall(".")
-                            st.success("✅ 還原成功！畫面將重新整理...")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"還原失敗：{e}")
+                            with zipfile.ZipFile(uploaded_zip, "r") as z: z.extractall(".")
+                            st.success("✅ 還原成功！"); st.rerun()
+                        except Exception as e: st.error(f"失敗：{e}")
+
+        # 新增：統計報表功能
+        with t7:
+            st.subheader("📊 每月課程統計")
+            if not df_db.empty:
+                # 1. 資料處理
+                df_stat = df_db.copy()
+                df_stat["日期"] = pd.to_datetime(df_stat["日期"])
+                df_stat["月份"] = df_stat["日期"].dt.strftime("%Y-%m")
+                
+                # 2. 樞紐分析表：計算各課程數
+                # index=月份, columns=課程種類, values=計數
+                pivot = df_stat.pivot_table(index="月份", columns="課程種類", values="學員", aggfunc="count", fill_value=0)
+                
+                # 3. 計算每月總堂數 (新增 Total 欄位)
+                pivot["👉 每月總堂數"] = pivot.sum(axis=1)
+                
+                # 4. 排序 (月份由新到舊)
+                pivot = pivot.sort_index(ascending=False)
+                
+                # 5. 顯示表格
+                st.dataframe(pivot, use_container_width=True)
+                
+                # 6. 視覺化圖表 (選用)
+                st.caption("📈 每月總堂數趨勢")
+                st.bar_chart(pivot["👉 每月總堂數"])
+            else:
+                st.info("目前還沒有課程資料，排課後這裡會自動顯示統計數據。")
 
     elif pwd != "": st.error("密碼錯誤")
 
