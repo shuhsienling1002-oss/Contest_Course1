@@ -95,7 +95,8 @@ if not ALL_CATEGORIES:
     ALL_CATEGORIES = ["(請設定)"]
 
 # ==================== 2. 全域大日曆 ====================
-st.subheader("🗓️ 課程總覽")
+# --- 修改標題 ---
+st.subheader("🗓️ 林芸教練排課表")
 
 def get_category_color(cat_name):
     cat_str = str(cat_name)
@@ -114,14 +115,12 @@ for _, row in df_db.iterrows():
     if pd.isna(row['日期']): continue
     theme_color = get_category_color(row['課程種類'])
     try:
-        # 支援半點時間處理 (例如 07:30)
         t_str = str(row['時間'])
         parts = t_str.split(':')
         h = int(parts[0])
         m = int(parts[1]) if len(parts) > 1 else 0
         
         start_iso = f"{row['日期']}T{h:02d}:{m:02d}:00"
-        # 結束時間預設+1小時
         end_h = h + 1
         end_iso = f"{row['日期']}T{end_h:02d}:{m:02d}:00"
         
@@ -204,7 +203,7 @@ calendar_options = {
         "listMonth": { "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" } }
     }
 }
-calendar(events=events, options=calendar_options, key="cal_v32_manual_time")
+calendar(events=events, options=calendar_options, key="cal_v33_new_title")
 st.divider()
 
 # ==================== 3. 身份導覽 ====================
@@ -256,18 +255,15 @@ else:
             with st.container(border=True):
                 d = st.date_input("日期", date.today())
                 
-                # --- V32 關鍵修改：雙模式時間選擇 ---
+                # 手動時間輸入 (V32 功能保留)
                 c_t1, c_t2 = st.columns([3, 1])
                 with c_t2:
                     manual_time = st.checkbox("⏳ 手動輸入", help="勾選後可輸入 7:30 等非整點時間")
-                
                 with c_t1:
                     if manual_time:
-                        # 手動模式：使用時間輸入框 (可打字，也可點選)
                         t_obj = st.time_input("時間 (請輸入)", value=time(7, 30))
                         t = t_obj.strftime("%H:%M")
                     else:
-                        # 原始機制：下拉選單 (整點)
                         t = st.selectbox("時間", [f"{h:02d}:00" for h in range(7, 23)])
                 
                 s = st.selectbox("學員", ["(選學員)"] + student_list)
@@ -327,7 +323,6 @@ else:
                 is_all_day = c3.checkbox("全天", value=True)
                 
                 if not is_all_day:
-                    # 這裡也同步加上手動輸入功能
                     man_evt_t = c3.checkbox("手動時間", key="man_evt")
                     if man_evt_t:
                         evt_t_obj = st.time_input("時間", value=time(7, 30), key="evt_t_in")
