@@ -9,11 +9,11 @@ try:
 except ImportError:
     st.error("請先安裝套件：pip install streamlit-calendar")
 
-# --- 1. 檔案設定 (完全保留) ---
-DB_FILE = "gym_lessons_v13.csv"
-REQ_FILE = "gym_requests_v13.csv"
-STU_FILE = "gym_students_v13.csv"
-CAT_FILE = "gym_categories_v13.csv"
+# --- 1. 檔案設定 ---
+DB_FILE = "gym_lessons_v14.csv"
+REQ_FILE = "gym_requests_v14.csv"
+STU_FILE = "gym_students_v14.csv"
+CAT_FILE = "gym_categories_v14.csv"
 COACH_PASSWORD = "1234"
 
 st.set_page_config(page_title="林芸健身", layout="wide", initial_sidebar_state="collapsed")
@@ -38,7 +38,7 @@ df_cat = pd.read_csv(CAT_FILE)
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
 ALL_CATEGORIES = df_cat["類別名稱"].tolist() if not df_cat.empty else ["(請設定)"]
 
-# ==================== 2. 全域大日曆 (修復崩潰) ====================
+# ==================== 2. 全域大日曆 ====================
 st.subheader("🗓️ 課程總覽")
 
 events = []
@@ -59,16 +59,27 @@ for _, row in df_db.iterrows():
         "borderColor": color,
     })
 
-# --- B. 加入 2025 台灣國定假日 (紅色標記) ---
+# --- B. 加入國定假日 (紅色全天標記) ---
+# 這裡加入跨年度的假日，確保您現在看得到
 holidays = [
+    # 2025 年末
+    {"start": "2025-12-31", "title": "跨年夜(補)"},
+    
+    # 2026 年初 (預估)
+    {"start": "2026-01-01", "title": "元旦"},
+    {"start": "2026-02-17", "end": "2026-02-23", "title": "春節連假"}, # 農曆除夕是 2/17
+    {"start": "2026-02-28", "title": "228紀念日"},
+    {"start": "2026-04-04", "end": "2026-04-07", "title": "清明連假"},
+    
+    # 2025 年回顧 (如果您往回翻)
     {"start": "2025-01-01", "title": "元旦"},
-    {"start": "2025-01-25", "end": "2025-02-03", "title": "春節連假"},
-    {"start": "2025-02-28", "title": "和平紀念日"},
-    {"start": "2025-04-03", "end": "2025-04-07", "title": "清明連假"},
+    {"start": "2025-01-25", "end": "2025-02-03", "title": "春節"},
+    {"start": "2025-02-28", "title": "228"},
+    {"start": "2025-04-03", "end": "2025-04-07", "title": "清明"},
     {"start": "2025-05-01", "title": "勞動節"},
-    {"start": "2025-05-30", "end": "2025-06-02", "title": "端午連假"},
-    {"start": "2025-10-04", "end": "2025-10-07", "title": "中秋連假"},
-    {"start": "2025-10-10", "end": "2025-10-13", "title": "國慶連假"},
+    {"start": "2025-05-30", "end": "2025-06-02", "title": "端午"},
+    {"start": "2025-10-04", "end": "2025-10-07", "title": "中秋"},
+    {"start": "2025-10-10", "end": "2025-10-13", "title": "國慶"},
 ]
 
 for h in holidays:
@@ -77,37 +88,44 @@ for h in holidays:
         "start": h["start"],
         "end": h.get("end"),
         "allDay": True,
-        "backgroundColor": "#D32F2F", # 深紅
+        "backgroundColor": "#D32F2F", # 鮮豔紅
         "borderColor": "#D32F2F",
-        "display": "block"
+        "display": "block", # 顯示為色塊條
+        "classNames": ["holiday-event"] # 標記類別
     })
 
-# --- C. 日曆設定 (移除導致崩潰的設定) ---
+# --- C. 日曆設定 (關鍵修改) ---
 calendar_options = {
     "editable": False,
     "headerToolbar": {
         "left": "prev,next", 
         "center": "title",
+        # 1. 保留您要的三視圖 + 手機列表
         "right": "dayGridMonth,timeGridWeek,timeGridDay,listMonth" 
     },
+    # 2. 徹底移除「日」字：使用英文核心，但手動改中文按鈕
+    "locale": "en", 
     "buttonText": {
+        "today": "今",
         "month": "月", 
         "week": "周", 
         "day": "日", 
         "list": "清單"
     },
-    # ⚠️ 關鍵修正：移除了 dayCellContent，這是導致 React Error #31 的元兇
+    # 3. 周視圖標題格式簡化 (顯示 Sun 1, Mon 2...)
+    "dayHeaderFormat": {"weekday": "short", "day": "numeric", "omitCommas": True},
+    
     "initialView": "dayGridMonth",
     "height": 550,
-    "locale": "zh-tw", # 設定中文，通常預設就不會顯示「日」字
     "slotMinTime": "06:00:00",
     "slotMaxTime": "23:00:00",
+    "firstDay": 1, # 週一開始
 }
 
-calendar(events=events, options=calendar_options, key="mobile_cal_fixed")
+calendar(events=events, options=calendar_options, key="final_cal")
 st.divider()
 
-# ==================== 3. 身份導覽 (完全保留) ====================
+# ==================== 3. 身份導覽 (維持手機極簡) ====================
 mode = st.radio("", ["🔍 學員查詢", "🔧 教練後台"], horizontal=True)
 
 # --- A. 學員區 ---
