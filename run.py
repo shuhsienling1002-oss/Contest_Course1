@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import os
 import hashlib
+import zipfile 
+import io      
 from datetime import datetime, date
 
 # 嘗試載入日曆組件
@@ -76,9 +78,7 @@ df_db, df_stu, df_req, df_cat = load_and_fix_data()
 
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
 
-# --- 這裡修正了之前導致 SyntaxError 的語法 ---
 ALL_CATEGORIES = df_cat["類別名稱"].tolist()
-# 防呆：把目前課程表裡有的類別也加進來，避免編輯器報錯
 existing_cats = df_db["課程種類"].unique().tolist() if not df_db.empty else []
 for ec in existing_cats:
     if ec and ec not in ALL_CATEGORIES:
@@ -89,14 +89,13 @@ if not ALL_CATEGORIES:
 # ==================== 2. 全域大日曆 ====================
 st.subheader("🗓️ 課程總覽")
 
-# 自動配色函數 (支援林口、蘆洲等自訂名稱)
+# 自動配色函數
 def get_category_color(cat_name):
     cat_str = str(cat_name)
     if "MA" in cat_str: return "#D32F2F" # 紅
     if "S" in cat_str: return "#1976D2" # 藍
     if "一般" in cat_str: return "#388E3C" # 綠
     
-    # 其他自訂課程：自動產生顏色
     palette = ["#F57C00", "#7B1FA2", "#00796B", "#C2185B", "#5D4037", "#303F9F", "#E64A19"]
     hash_val = int(hashlib.sha256(cat_str.encode('utf-8')).hexdigest(), 16)
     return palette[hash_val % len(palette)]
@@ -153,7 +152,7 @@ calendar_options = {
         "listMonth": { "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" } }
     }
 }
-calendar(events=events, options=calendar_options, key="cal_v26_fix_delete")
+calendar(events=events, options=calendar_options, key="cal_v28_restore")
 st.divider()
 
 # ==================== 3. 身份導覽 ====================
@@ -198,7 +197,7 @@ if mode == "🔍 學員查詢":
 else:
     pwd = st.text_input("密碼", type="password")
     if pwd == COACH_PASSWORD:
-        t1, t2, t3, t4, t5 = st.tabs(["排課", "編輯", "名單", "設定", "留言"])
+        t1, t2, t3, t4, t5, t6 = st.tabs(["排課", "編輯", "名單", "設定", "留言", "💾 備份與還原"])
         
         with t1:
             st.caption("🚀 快速排課")
@@ -228,7 +227,6 @@ else:
             st.info("💡 操作教學：勾選左側框框後按 Delete 鍵即可刪除，完成後記得按『儲存』。")
             ed = st.date_input("修課日期", date.today())
             mask = df_db["日期"] == ed
-            # 這裡加上了 ALL_CATEGORIES 確保選單不會因為資料庫有怪名字而崩潰
             edited = st.data_editor(
                 df_db[mask], 
                 num_rows="dynamic", 
@@ -268,7 +266,43 @@ else:
             st.dataframe(df_req, use_container_width=True)
             if st.button("🗑️ 清空", use_container_width=True):
                 pd.DataFrame(columns=["日期", "時間", "姓名", "留言"]).to_csv(REQ_FILE, index=False); st.rerun()
+
+        # 新增：備份與還原
+        with t6:
+            st.subheader("💾 資料庫管理")
+            
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                st.markdown("### 1️⃣ 備份下載 (Export)")
+                st.write("將目前的系統資料打包下載。")
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, "x", zipfile.ZIP_DEFLATED) as zf:
+                    for f in [DB_FILE, REQ_FILE, STU_FILE, CAT_FILE]:
+                        if os.path.exists(f): zf.write(f)
                 
+                st.download_button(
+                    label="⬇️ 下載備份 ZIP",
+                    data=buf.getvalue(),
+                    file_name=f"gym_backup_{datetime.now().strftime('%Y%m%d_%H%M')}.zip",
+                    mime="application/zip",
+                    type="primary"
+                )
+                
+            with c2:
+                st.markdown("### 2️⃣ 系統還原 (Import)")
+                st.write("上傳 ZIP 檔以恢復舊資料 (會覆蓋目前資料)。")
+                uploaded_zip = st.file_uploader("選擇備份檔", type="zip")
+                if uploaded_zip is not None:
+                    if st.button("🚨 確認還原資料", type="secondary"):
+                        try:
+                            with zipfile.ZipFile(uploaded_zip, "r") as z:
+                                z.extractall(".")
+                            st.success("✅ 還原成功！畫面將重新整理...")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"還原失敗：{e}")
+
     elif pwd != "": st.error("密碼錯誤")
 
 if st.button("⚠️ 重置"):
