@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import hashlib # 用來計算顏色
 from datetime import datetime, date
 
 # 嘗試載入日曆組件
@@ -45,12 +46,11 @@ def load_and_fix_data():
 
     try:
         df_s = pd.read_csv(STU_FILE)
-        # 舊欄位遷移邏輯
+        # 舊欄位遷移
         if "剩餘堂數" in df_s.columns and "購買堂數" not in df_s.columns:
             df_s.rename(columns={"剩餘堂數": "購買堂數"}, inplace=True)
         if "狀態" in df_s.columns and "課程類別" not in df_s.columns:
             df_s.rename(columns={"狀態": "課程類別"}, inplace=True)
-        # 補齊
         for c in SCHEMA[STU_FILE]: 
             if c not in df_s.columns: 
                 if c == "購買堂數": df_s[c] = 0
@@ -76,22 +76,43 @@ df_db, df_stu, df_req, df_cat = load_and_fix_data()
 
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
 
-# 修正處：這裡修正了語法錯誤
-ALL_CATEGORIES = df_cat["類別名稱"].tolist() if not df_cat.empty else ["(請設定)"]
+# 修正處：這裡修正了語法錯誤 (把邏輯拆開寫最安全)
+ALL_CATEGORIES = df_cat["類別名稱"].tolist()
+if not ALL_CATEGORIES:
+    ALL_CATEGORIES = ["(請設定)"]
 
 # ==================== 2. 全域大日曆 ====================
 st.subheader("🗓️ 課程總覽")
+
+# 定義一個自動配色的函數
+def get_category_color(cat_name):
+    cat_str = str(cat_name)
+    # 1. 核心課程保留固定色
+    if "MA" in cat_str: return "#D32F2F" # 紅色
+    if "S" in cat_str: return "#1976D2" # 藍色
+    if "一般" in cat_str: return "#388E3C" # 綠色
+    
+    # 2. 自訂課程 (林口、蘆洲...) 自動分配顏色
+    # 這裡準備了一個漂亮的調色盤
+    palette = [
+        "#F57C00", # 橘色
+        "#7B1FA2", # 紫色
+        "#00796B", # 藍綠色
+        "#C2185B", # 桃紅色
+        "#5D4037", # 咖啡色
+        "#303F9F", # 靛青色
+        "#E64A19"  # 深橘
+    ]
+    # 使用名稱的雜湊值來固定選一個顏色，這樣「林口」永遠會是同一個顏色
+    hash_val = int(hashlib.sha256(cat_str.encode('utf-8')).hexdigest(), 16)
+    return palette[hash_val % len(palette)]
 
 events = []
 for _, row in df_db.iterrows():
     if pd.isna(row['日期']): continue
     
-    cat_str = str(row['課程種類'])
-    # 顏色邏輯
-    if "MA" in cat_str: theme_color = "#D32F2F" # 紅
-    elif "S" in cat_str: theme_color = "#1976D2" # 藍
-    elif "一般" in cat_str: theme_color = "#388E3C" # 綠
-    else: theme_color = "#555555"
+    # 取得自動分配的顏色
+    theme_color = get_category_color(row['課程種類'])
     
     try:
         start_h = int(str(row['時間']).split(':')[0])
@@ -139,7 +160,7 @@ calendar_options = {
         "listMonth": { "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" } }
     }
 }
-calendar(events=events, options=calendar_options, key="cal_v24_syntax_fix")
+calendar(events=events, options=calendar_options, key="cal_v25_auto_color")
 st.divider()
 
 # ==================== 3. 身份導覽 ====================
@@ -151,8 +172,15 @@ if mode == "🔍 學員查詢":
     
     if not day_view.empty:
         for _, row in day_view.iterrows():
-            icon = "🔴" if "MA" in str(row['課程種類']) else ("🔵" if "S" in str(row['課程種類']) else "🟢")
-            st.info(f"{icon} **{row['時間']}**　👤 **{row['學員']}**\n\n📌 {row['課程種類']}")
+            # 這裡也用一樣的邏輯來顯示前面的小圓點
+            c_code = get_category_color(row['課程種類'])
+            # 由於 st.info 不能自訂顏色，這裡用 HTML 語法模擬有色圓點
+            st.markdown(f"""
+            <div style="padding: 10px; border-radius: 5px; background-color: #f0f2f6; border-left: 5px solid {c_code}; margin-bottom: 10px;">
+                <b>{row['時間']}</b> &nbsp; 👤 <b>{row['學員']}</b> <br>
+                <span style="color: {c_code}; font-size: 0.9em;">📌 {row['課程種類']}</span>
+            </div>
+            """, unsafe_allow_html=True)
     else: st.write("🍵 本日無課")
     
     st.divider()
@@ -168,7 +196,6 @@ if mode == "🔍 學員查詢":
         
     with st.expander("📝 預約/留言"):
         with st.form("req"):
-            # 預約功能：保留指定日期
             req_date = st.date_input("預約日期", value=sel_date)
             un = st.text_input("姓名", value=s_name if student_list else "")
             ut = st.selectbox("時段", [f"{h:02d}:00" for h in range(7, 23)])
