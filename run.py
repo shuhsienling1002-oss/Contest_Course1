@@ -39,21 +39,29 @@ for f, cols in SCHEMA.items():
         else:
             pd.DataFrame(columns=cols).to_csv(f, index=False)
 
-# --- 資料讀取與自動修復 ---
+# --- 資料讀取與自動修復 (防崩潰核心) ---
 def load_and_fix_data():
+    # 1. 讀取課程
     try:
         df_d = pd.read_csv(DB_FILE)
+        # 強制將欄位轉為字串，避免 NaN 造成選單崩潰
+        if "課程種類" in df_d.columns:
+            df_d["課程種類"] = df_d["課程種類"].fillna("").astype(str)
         for c in SCHEMA[DB_FILE]: 
             if c not in df_d.columns: df_d[c] = ""
         df_d["日期"] = pd.to_datetime(df_d["日期"], errors='coerce').dt.date
     except: df_d = pd.DataFrame(columns=SCHEMA[DB_FILE])
 
+    # 2. 讀取學員
     try:
         df_s = pd.read_csv(STU_FILE)
         if "剩餘堂數" in df_s.columns and "購買堂數" not in df_s.columns:
             df_s.rename(columns={"剩餘堂數": "購買堂數"}, inplace=True)
         if "狀態" in df_s.columns and "課程類別" not in df_s.columns:
             df_s.rename(columns={"狀態": "課程類別"}, inplace=True)
+        # 強制轉型
+        if "課程類別" in df_s.columns:
+            df_s["課程類別"] = df_s["課程類別"].fillna("").astype(str)
         for c in SCHEMA[STU_FILE]: 
             if c not in df_s.columns: 
                 if c == "購買堂數": df_s[c] = 0
@@ -61,18 +69,23 @@ def load_and_fix_data():
         df_s = df_s[SCHEMA[STU_FILE]]
     except: df_s = pd.DataFrame(columns=SCHEMA[STU_FILE])
 
+    # 3. 讀取留言
     try:
         df_r = pd.read_csv(REQ_FILE)
         for c in SCHEMA[REQ_FILE]: 
             if c not in df_r.columns: df_r[c] = ""
     except: df_r = pd.DataFrame(columns=SCHEMA[REQ_FILE])
 
+    # 4. 讀取類別
     try:
         df_c = pd.read_csv(CAT_FILE)
         if df_c.empty or "類別名稱" not in df_c.columns:
             df_c = pd.DataFrame({"類別名稱": ["MA 體態", "S 專項"]})
+        # 強制轉型
+        df_c["類別名稱"] = df_c["類別名稱"].astype(str)
     except: df_c = pd.DataFrame({"類別名稱": ["MA 體態", "S 專項"]})
 
+    # 5. 行事曆
     try:
         df_e = pd.read_csv(COACH_EVT_FILE)
         for c in SCHEMA[COACH_EVT_FILE]:
@@ -86,16 +99,22 @@ df_db, df_stu, df_req, df_cat, df_evt = load_and_fix_data()
 
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
 
-ALL_CATEGORIES = df_cat["類別名稱"].tolist()
-existing_cats = df_db["課程種類"].unique().tolist() if not df_db.empty else []
-for ec in existing_cats:
-    if ec and ec not in ALL_CATEGORIES:
-        ALL_CATEGORIES.append(ec)
+# --- 關鍵修復：建立絕對安全的下拉選單 ---
+# 1. 先拿設定檔裡的類別
+base_cats = df_cat["類別名稱"].tolist()
+# 2. 再拿目前資料庫裡已經存在的類別 (防止資料庫有"林口"，但設定檔沒有，導致報錯)
+db_cats = df_db["課程種類"].unique().tolist()
+stu_cats = df_stu["課程類別"].unique().tolist()
+
+# 3. 合併並去重，移除空值
+raw_all = set(base_cats + db_cats + stu_cats)
+ALL_CATEGORIES = [str(x) for x in raw_all if x and str(x).lower() != 'nan' and str(x).strip() != '']
+ALL_CATEGORIES.sort()
+
 if not ALL_CATEGORIES:
     ALL_CATEGORIES = ["(請設定)"]
 
 # ==================== 2. 全域大日曆 ====================
-# --- 修改標題 ---
 st.subheader("🗓️ 林芸教練排課表")
 
 def get_category_color(cat_name):
@@ -143,7 +162,7 @@ for _, row in df_evt.iterrows():
     else:
         evt_color = "#E65100"
     
-    is_all_day = (row['時間'] == "全天")
+    is_all_day = (str(row['時間']) == "全天")
     
     evt_obj = {
         "title": f"{row['事項']}",
@@ -203,7 +222,7 @@ calendar_options = {
         "listMonth": { "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" } }
     }
 }
-calendar(events=events, options=calendar_options, key="cal_v33_new_title")
+calendar(events=events, options=calendar_options, key="cal_v34_fix_crash")
 st.divider()
 
 # ==================== 3. 身份導覽 ====================
@@ -255,7 +274,6 @@ else:
             with st.container(border=True):
                 d = st.date_input("日期", date.today())
                 
-                # 手動時間輸入 (V32 功能保留)
                 c_t1, c_t2 = st.columns([3, 1])
                 with c_t2:
                     manual_time = st.checkbox("⏳ 手動輸入", help="勾選後可輸入 7:30 等非整點時間")
@@ -268,14 +286,17 @@ else:
                 
                 s = st.selectbox("學員", ["(選學員)"] + student_list)
                 
+                # 選項邏輯：如果學員已有綁定，預設選那個，但也要允許選其他的
                 opts = ALL_CATEGORIES
+                default_idx = 0
                 if s != "(選學員)":
                     rec = df_stu[df_stu["姓名"] == s]
                     if not rec.empty:
                         saved = rec.iloc[0]["課程類別"]
-                        if saved and saved in ALL_CATEGORIES: opts = [saved]
+                        if saved and saved in ALL_CATEGORIES:
+                            default_idx = ALL_CATEGORIES.index(saved)
                 
-                cat = st.selectbox("項目", opts)
+                cat = st.selectbox("項目", opts, index=default_idx)
                 
                 if st.button("➕ 新增", type="primary", use_container_width=True):
                     if s != "(選學員)":
@@ -289,6 +310,9 @@ else:
             st.info("💡 編輯課程")
             ed = st.date_input("修課日期", date.today())
             mask = df_db["日期"] == ed
+            
+            # 這裡就是之前報錯的地方，現在 ALL_CATEGORIES 已經包含了資料庫裡所有的項目
+            # 所以 SelectboxColumn 絕對不會因為找不到選項而崩潰
             edited = st.data_editor(
                 df_db[mask], num_rows="dynamic", use_container_width=True, 
                 column_config={"課程種類": st.column_config.SelectboxColumn("項目", options=ALL_CATEGORIES)}
@@ -298,6 +322,7 @@ else:
 
         with t3:
             st.caption("設定學員")
+            # 同樣加上防崩潰選單
             estu = st.data_editor(df_stu, num_rows="dynamic", use_container_width=True, 
                 column_config={"姓名":"姓名","課程類別": st.column_config.SelectboxColumn("綁定項目", options=ALL_CATEGORIES)})
             if st.button("💾 更新名單", use_container_width=True):
