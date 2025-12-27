@@ -9,7 +9,7 @@ try:
 except ImportError:
     st.error("請先安裝套件：pip install streamlit-calendar")
 
-# --- 1. 檔案設定 (維持不變) ---
+# --- 1. 檔案設定 ---
 DB_FILE = "gym_lessons_v19.csv"
 REQ_FILE = "gym_requests_v19.csv"
 STU_FILE = "gym_students_v19.csv"
@@ -45,7 +45,7 @@ df_db, df_stu, df_req, df_cat = load_data()
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
 ALL_CATEGORIES = df_cat["類別名稱"].tolist() if not df_cat.empty else ["(請設定)"]
 
-# ==================== 2. 全域大日曆 (視覺優化：白底彩字) ====================
+# ==================== 2. 全域大日曆 (視覺優化) ====================
 st.subheader("🗓️ 課程總覽")
 
 events = []
@@ -70,19 +70,19 @@ for _, row in df_db.iterrows():
         start_h = int(str(row['時間']).split(':')[0])
         end_h = start_h + 1
         events.append({
-            # 修正：標題只放名字，避免重複顯示時間
+            # 修正 1：標題只放名字，拿掉時間字串，避免重複
             "title": f"{row['學員']}", 
             "start": f"{row['日期']}T{start_h:02d}:00:00",
             "end": f"{row['日期']}T{end_h:02d}:00:00",
             
-            # 視覺設定：背景白，字體彩色，邊框彩色
+            # 修正 2：背景白，字體彩色，邊框彩色
             "backgroundColor": "#FFFFFF", 
             "textColor": theme_color,     
             "borderColor": theme_color,
         })
     except: continue
 
-# --- B. 加入國定假日 (維持紅底白字) ---
+# --- B. 加入國定假日 ---
 holidays = [
     {"start": "2025-12-31", "title": "跨年夜(補)"},
     {"start": "2026-01-01", "title": "元旦"},
@@ -99,13 +99,13 @@ for h in holidays:
         "start": h["start"],
         "end": h.get("end"),
         "allDay": True,
-        "backgroundColor": "#D32F2F", # 假日維持顯眼的全紅
+        "backgroundColor": "#D32F2F", # 假日維持全紅底白字
         "borderColor": "#D32F2F",
         "textColor": "#FFFFFF",
         "display": "block",
     })
 
-# --- C. 日曆設定 (保留所有設定) ---
+# --- C. 日曆設定 ---
 calendar_options = {
     "editable": False,
     "headerToolbar": {
@@ -113,7 +113,7 @@ calendar_options = {
         "center": "title",
         "right": "dayGridMonth,timeGridWeek,timeGridDay,listMonth" 
     },
-    "locale": "en", # 維持英文核心（確保無「日」字）
+    "locale": "en", # 英文核心（去日字）
     "buttonText": {
         "today": "今天", "month": "月", "week": "周", "day": "日", "list": "清單"
     },
@@ -124,7 +124,7 @@ calendar_options = {
     "slotMaxTime": "23:00:00",
     "firstDay": 1,
     
-    # 時間格式優化：顯示 11:00 而不是 11a
+    # 修正 3：設定時間顯示格式為 24小時制 (11:00) 而不是 11a
     "eventTimeFormat": {
         "hour": "2-digit",
         "minute": "2-digit",
@@ -138,10 +138,10 @@ calendar_options = {
     }
 }
 
-calendar(events=events, options=calendar_options, key="cal_v19_final")
+calendar(events=events, options=calendar_options, key="cal_v19_color_text")
 st.divider()
 
-# ==================== 3. 身份導覽 (保留完整功能) ====================
+# ==================== 3. 身份導覽 ====================
 mode = st.radio("", ["🔍 學員查詢", "🔧 教練後台"], horizontal=True)
 
 # --- A. 學員區 ---
@@ -190,7 +190,6 @@ else:
                 t = st.selectbox("時間", [f"{h:02d}:00" for h in range(7, 23)])
                 s = st.selectbox("學員", ["(選學員)"] + student_list)
                 
-                # 保留防呆鎖定邏輯
                 opts = ALL_CATEGORIES
                 if s != "(選學員)":
                     rec = df_stu[df_stu["姓名"] == s]
