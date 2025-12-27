@@ -9,7 +9,7 @@ try:
 except ImportError:
     st.error("請先安裝套件：pip install streamlit-calendar")
 
-# --- 1. 檔案設定 (固定檔名) ---
+# --- 1. 檔案設定 (固定檔名，資料永不遺失) ---
 DB_FILE = "gym_lessons.csv"
 REQ_FILE = "gym_requests.csv"
 STU_FILE = "gym_students.csv"
@@ -18,7 +18,7 @@ COACH_PASSWORD = "1234"
 
 st.set_page_config(page_title="林芸健身", layout="wide", initial_sidebar_state="collapsed")
 
-# 欄位定義 (標準答案)
+# 欄位定義標準
 SCHEMA = {
     DB_FILE: ["日期", "時間", "學員", "課程種類", "備註"],
     REQ_FILE: ["日期", "時間", "姓名", "留言"],
@@ -34,43 +34,34 @@ for f, cols in SCHEMA.items():
         else:
             pd.DataFrame(columns=cols).to_csv(f, index=False)
 
-# --- 資料讀取與自動修復 (關鍵修復功能) ---
+# --- 資料讀取與自動修復 ---
 def load_and_fix_data():
-    # 1. 讀取課程
     try:
         df_d = pd.read_csv(DB_FILE)
-        # 自動補齊缺失欄位
         for c in SCHEMA[DB_FILE]: 
             if c not in df_d.columns: df_d[c] = ""
         df_d["日期"] = pd.to_datetime(df_d["日期"], errors='coerce').dt.date
     except: df_d = pd.DataFrame(columns=SCHEMA[DB_FILE])
 
-    # 2. 讀取學員 (最常報錯的地方)
     try:
         df_s = pd.read_csv(STU_FILE)
-        # 這裡做更嚴格的檢查，如果舊檔有「剩餘堂數」但沒「購買堂數」，做個遷移
         if "剩餘堂數" in df_s.columns and "購買堂數" not in df_s.columns:
             df_s.rename(columns={"剩餘堂數": "購買堂數"}, inplace=True)
         if "狀態" in df_s.columns and "課程類別" not in df_s.columns:
             df_s.rename(columns={"狀態": "課程類別"}, inplace=True)
-            
-        # 補齊其他欄位
         for c in SCHEMA[STU_FILE]: 
             if c not in df_s.columns: 
                 if c == "購買堂數": df_s[c] = 0
                 else: df_s[c] = ""
-        # 確保只留標準欄位，避免舊垃圾欄位干擾
         df_s = df_s[SCHEMA[STU_FILE]]
     except: df_s = pd.DataFrame(columns=SCHEMA[STU_FILE])
 
-    # 3. 讀取留言
     try:
         df_r = pd.read_csv(REQ_FILE)
         for c in SCHEMA[REQ_FILE]: 
             if c not in df_r.columns: df_r[c] = ""
     except: df_r = pd.DataFrame(columns=SCHEMA[REQ_FILE])
 
-    # 4. 讀取類別
     try:
         df_c = pd.read_csv(CAT_FILE)
         if df_c.empty or "類別名稱" not in df_c.columns:
@@ -82,11 +73,9 @@ def load_and_fix_data():
 df_db, df_stu, df_req, df_cat = load_and_fix_data()
 
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
-# 確保選單不為空，否則 data_editor 會報錯
-ALL_CATEGORIES = df_cat["類別名稱"].tolist()
-if not ALL_CATEGORIES: ALL_CATEGORIES = ["(請設定)"]
+ALL_CATEGORIES = df_cat["類別名稱"].tolist() if not ALL_CATEGORIES: ALL_CATEGORIES = ["(請設定)"]
 
-# ==================== 2. 全域大日曆 (白底彩字版) ====================
+# ==================== 2. 全域大日曆 ====================
 st.subheader("🗓️ 課程總覽")
 
 events = []
@@ -94,25 +83,24 @@ for _, row in df_db.iterrows():
     if pd.isna(row['日期']): continue
     
     cat_str = str(row['課程種類'])
-    if "MA" in cat_str: theme_color = "#D32F2F" # 紅
-    elif "S" in cat_str: theme_color = "#1976D2" # 藍
-    elif "一般" in cat_str: theme_color = "#388E3C" # 綠
+    if "MA" in cat_str: theme_color = "#D32F2F"
+    elif "S" in cat_str: theme_color = "#1976D2"
+    elif "一般" in cat_str: theme_color = "#388E3C"
     else: theme_color = "#555555"
     
     try:
         start_h = int(str(row['時間']).split(':')[0])
         end_h = start_h + 1
         events.append({
-            "title": f"{row['學員']}", 
+            "title": f"{row['學員']}",
             "start": f"{row['日期']}T{start_h:02d}:00:00",
             "end": f"{row['日期']}T{end_h:02d}:00:00",
-            "backgroundColor": "#FFFFFF", 
-            "textColor": theme_color,     
+            "backgroundColor": "#FFFFFF",
+            "textColor": theme_color,
             "borderColor": theme_color,
         })
     except: continue
 
-# 國定假日
 holidays = [
     {"start": "2025-12-31", "title": "跨年夜(補)"},
     {"start": "2026-01-01", "title": "元旦"},
@@ -146,13 +134,14 @@ calendar_options = {
         "listMonth": { "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" } }
     }
 }
-calendar(events=events, options=calendar_options, key="cal_v21_fix")
+calendar(events=events, options=calendar_options, key="cal_v23_date_res")
 st.divider()
 
 # ==================== 3. 身份導覽 ====================
 mode = st.radio("", ["🔍 學員查詢", "🔧 教練後台"], horizontal=True)
 
 if mode == "🔍 學員查詢":
+    # 這裡的日期是用來「查詢課表」的
     sel_date = st.date_input("查詢日期", date.today())
     day_view = df_db[df_db["日期"] == sel_date].sort_values("時間")
     
@@ -167,22 +156,23 @@ if mode == "🔍 學員查詢":
         s_name = st.selectbox("查詢餘額 (選擇姓名)", student_list)
         s_data = df_stu[df_stu["姓名"] == s_name].iloc[0]
         used = len(df_db[df_db["學員"] == s_name])
-        # 安全讀取
         try: total = int(float(s_data['購買堂數']))
         except: total = 0
         left = total - used
-        
         c1, c2, c3 = st.columns(3)
         c1.metric("總額", total); c2.metric("已上", used); c3.metric("餘額", left)
         
     with st.expander("📝 預約/留言"):
         with st.form("req"):
+            # V23 更新：加入日期選擇
+            req_date = st.date_input("預約日期", value=sel_date)
             un = st.text_input("姓名", value=s_name if student_list else "")
             ut = st.selectbox("時段", [f"{h:02d}:00" for h in range(7, 23)])
             um = st.text_area("備註")
             if st.form_submit_button("送出", use_container_width=True):
-                pd.concat([df_req, pd.DataFrame([{"日期":str(sel_date),"時間":ut,"姓名":un,"留言":um}])]).to_csv(REQ_FILE, index=False)
-                st.success("已送出")
+                # 存檔時使用「req_date」而不是查詢的「sel_date」
+                pd.concat([df_req, pd.DataFrame([{"日期":str(req_date),"時間":ut,"姓名":un,"留言":um}])]).to_csv(REQ_FILE, index=False)
+                st.success(f"已送出預約：{req_date} {ut}")
 
 else:
     pwd = st.text_input("密碼", type="password")
@@ -214,6 +204,7 @@ else:
                     else: st.error("未選人")
 
         with t2:
+            st.info("💡 如果日曆上的字是黑色的，請在這裡補上『項目』，顏色就會出現了！")
             ed = st.date_input("修課日期", date.today())
             mask = df_db["日期"] == ed
             edited = st.data_editor(df_db[mask], num_rows="dynamic", use_container_width=True, column_config={"課程種類":"項目", "備註":"備註", "學員":"姓名"})
@@ -222,7 +213,6 @@ else:
 
         with t3:
             st.caption("設定學員額度與綁定項目")
-            # 這裡就是之前報錯的地方，現在資料已經被修復，不會再崩潰了
             estu = st.data_editor(
                 df_stu, 
                 num_rows="dynamic", 
