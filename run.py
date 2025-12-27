@@ -9,7 +9,7 @@ try:
 except ImportError:
     st.error("請先安裝套件：pip install streamlit-calendar")
 
-# --- 1. 檔案設定 ---
+# --- 1. 檔案設定 (完全保留) ---
 DB_FILE = "gym_lessons_v12.csv"
 REQ_FILE = "gym_requests_v12.csv"
 STU_FILE = "gym_students_v12.csv"
@@ -38,56 +38,98 @@ df_cat = pd.read_csv(CAT_FILE)
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
 ALL_CATEGORIES = df_cat["類別名稱"].tolist() if not df_cat.empty else ["(請設定)"]
 
-# ==================== 2. 全域大日曆 (強制顯示) ====================
-st.subheader("🗓️ 課程總覽") # 標題簡單化
+# ==================== 2. 全域大日曆 (視覺優化) ====================
+st.subheader("🗓️ 課程總覽")
 
 events = []
+
+# --- A. 加入課程資料 ---
 for _, row in df_db.iterrows():
     cat_str = str(row['課程種類'])
-    color = "#FF4B4B" if "MA" in cat_str else ("#3D9DF3" if "S" in cat_str else "#2E8B57")
+    color = "#33b5e5" # 預設藍
+    if "MA" in cat_str: color = "#FF4B4B" # 紅
+    elif "S" in cat_str: color = "#3D9DF3" # 深藍
+    elif "一般" in cat_str: color = "#2E8B57" # 綠
+    
     events.append({
-        "title": f"{row['時間']} {row['學員']}", # 日曆上只顯示 時間+人名 (手機看才不會擠)
+        "title": f"{row['時間']} {row['學員']}",
         "start": f"{row['日期']}T{row['時間']}:00",
         "end": f"{row['日期']}T{int(row['時間'][:2])+1}:00:00",
         "backgroundColor": color,
         "borderColor": color,
     })
 
+# --- B. 加入 2025 台灣國定假日 (紅色標記) ---
+# 您可以隨時在這裡增加新的假日
+holidays = [
+    {"start": "2025-01-01", "title": "元旦"},
+    {"start": "2025-01-25", "end": "2025-02-03", "title": "春節連假"}, # end 日期在日曆中是不包含的，所以寫到 2/3 會顯示到 2/2
+    {"start": "2025-02-28", "title": "和平紀念日"},
+    {"start": "2025-04-03", "end": "2025-04-07", "title": "兒童節/清明連假"},
+    {"start": "2025-05-01", "title": "勞動節"},
+    {"start": "2025-05-30", "end": "2025-06-02", "title": "端午連假"},
+    {"start": "2025-10-04", "end": "2025-10-07", "title": "中秋連假"},
+    {"start": "2025-10-10", "end": "2025-10-13", "title": "國慶連假"},
+    # 預先加幾個 2026 的讓您看效果 (參考您的截圖)
+    {"start": "2026-02-15", "end": "2026-02-21", "title": "春節 (預估)"},
+    {"start": "2026-02-28", "title": "228 紀念日"}
+]
+
+for h in holidays:
+    events.append({
+        "title": h["title"],
+        "start": h["start"],
+        "end": h.get("end"),
+        "allDay": True, # 全天事件
+        "backgroundColor": "#D32F2F", # 假日用深紅色
+        "borderColor": "#D32F2F",
+        "display": "block" # 顯示文字區塊
+    })
+
+# --- C. 日曆設定 (針對您的需求修改) ---
 calendar_options = {
     "editable": False,
     "headerToolbar": {
-        "left": "prev,next", # 手機版把 today 拿掉省空間
+        "left": "prev,next", 
         "center": "title",
-        "right": "dayGridMonth,listMonth" # 手機只留 月曆 跟 清單 兩種最實用
+        # 1. 月、日、周 都要有 (外加 list 是手機好用，我幫您留著)
+        "right": "dayGridMonth,timeGridWeek,timeGridDay,listMonth" 
     },
-    "buttonText": {"month": "月曆", "list": "清單"},
-    "initialView": "dayGridMonth", # 預設回月曆，確保您看得到
-    "height": 450,
+    "buttonText": {
+        "month": "月", 
+        "week": "周", 
+        "day": "日", 
+        "list": "清單"
+    },
+    # 2. 移除「日」文字，只顯示數字
+    "dayCellContent": {"numeric": "day"}, 
+    
+    "initialView": "dayGridMonth",
+    "height": 550, # 稍微調高一點讓假日顯示清楚
     "locale": "zh-tw",
+    "slotMinTime": "06:00:00", # 周/日視圖從早上6點開始
+    "slotMaxTime": "23:00:00",
 }
-# 這裡直接渲染日曆，不包在任何 Tab 裡，確保不會「不見」
+
 calendar(events=events, options=calendar_options, key="mobile_cal")
 st.divider()
 
-# ==================== 3. 身份導覽 ====================
-mode = st.radio("", ["🔍 學員查詢", "🔧 教練後台"], horizontal=True) # 改成橫向按鈕，省空間
+# ==================== 3. 身份導覽 (完全保留) ====================
+mode = st.radio("", ["🔍 學員查詢", "🔧 教練後台"], horizontal=True)
 
-# --- A. 學員區 (極簡化) ---
+# --- A. 學員區 ---
 if mode == "🔍 學員查詢":
     sel_date = st.date_input("查詢日期", date.today())
     day_view = df_db[df_db["日期"] == sel_date].sort_values("時間")
     
-    # 手機極簡顯示：不用表格，改用條列
     if not day_view.empty:
         for _, row in day_view.iterrows():
-            # 使用 info 框框顯示，字大清晰
             st.info(f"🕒 **{row['時間']}**　👤 **{row['學員']}**\n\n📌 {row['課程種類']}")
     else:
         st.write("🍵 本日無課")
 
     st.divider()
     
-    # 堂數查詢
     if student_list:
         s_name = st.selectbox("查詢餘額 (選擇姓名)", student_list)
         s_data = df_stu[df_stu["姓名"] == s_name].iloc[0]
@@ -95,17 +137,16 @@ if mode == "🔍 學員查詢":
         total = int(float(s_data['購買堂數'])) if pd.notnull(s_data['購買堂數']) else 0
         left = total - used
         
-        # 極簡數據
         c1, c2, c3 = st.columns(3)
         c1.metric("總額", total)
         c2.metric("已上", used)
-        c3.metric("餘額", left, delta_color="normal")
+        c3.metric("餘額", left)
         
     with st.expander("📝 預約/留言"):
         with st.form("req"):
             un = st.text_input("姓名", value=s_name if student_list else "")
             ut = st.selectbox("時段", [f"{h:02d}:00" for h in range(7, 23)])
-            um = st.text_area("備註") # 簡化文字
+            um = st.text_area("備註")
             if st.form_submit_button("送出", use_container_width=True):
                 pd.concat([df_req, pd.DataFrame([{"日期":str(sel_date),"時間":ut,"姓名":un,"留言":um}])]).to_csv(REQ_FILE, index=False)
                 st.success("已送出")
@@ -116,7 +157,7 @@ else:
     if pwd == COACH_PASSWORD:
         t1, t2, t3, t4, t5 = st.tabs(["排課", "編輯", "名單", "設定", "留言"])
         
-        # --- Tab 1: 排課 (極簡輸入) ---
+        # Tab 1: 排課
         with t1:
             st.caption("🚀 快速排課")
             with st.container(border=True):
@@ -124,14 +165,13 @@ else:
                 t = st.selectbox("時間", [f"{h:02d}:00" for h in range(7, 23)])
                 s = st.selectbox("學員", ["(選學員)"] + student_list)
                 
-                # 自動鎖定邏輯
                 opts = ALL_CATEGORIES
                 if s != "(選學員)":
                     rec = df_stu[df_stu["姓名"] == s]
                     if not rec.empty:
                         saved = rec.iloc[0]["課程類別"]
                         if saved and saved in ALL_CATEGORIES:
-                            opts = [saved] # 鎖定
+                            opts = [saved]
                 
                 cat = st.selectbox("項目", opts)
                 
@@ -144,11 +184,10 @@ else:
                     else:
                         st.error("未選人")
 
-        # --- Tab 2: 編輯 (表格文字簡化) ---
+        # Tab 2: 編輯
         with t2:
             ed = st.date_input("修課日期", date.today())
             mask = df_db["日期"] == ed
-            # 使用 column_config 把標頭改短，但不改動資料庫欄位
             edited = st.data_editor(
                 df_db[mask], 
                 num_rows="dynamic", 
@@ -163,7 +202,7 @@ else:
                 pd.concat([df_db[~mask], edited]).to_csv(DB_FILE, index=False)
                 st.rerun()
 
-        # --- Tab 3: 名單 (表格文字簡化) ---
+        # Tab 3: 名單
         with t3:
             st.caption("設定學員額度與綁定項目")
             estu = st.data_editor(
@@ -181,7 +220,7 @@ else:
                 estu.to_csv(STU_FILE, index=False)
                 st.rerun()
 
-        # --- Tab 4: 設定 ---
+        # Tab 4: 設定
         with t4:
             st.caption("自訂課程項目")
             ecat = st.data_editor(
@@ -194,6 +233,7 @@ else:
                 ecat.to_csv(CAT_FILE, index=False)
                 st.rerun()
 
+        # Tab 5: 留言
         with t5:
             st.dataframe(df_req, use_container_width=True)
             if st.button("🗑️ 清空", use_container_width=True):
