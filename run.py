@@ -45,10 +45,12 @@ def load_and_fix_data():
 
     try:
         df_s = pd.read_csv(STU_FILE)
+        # 舊欄位遷移邏輯
         if "剩餘堂數" in df_s.columns and "購買堂數" not in df_s.columns:
             df_s.rename(columns={"剩餘堂數": "購買堂數"}, inplace=True)
         if "狀態" in df_s.columns and "課程類別" not in df_s.columns:
             df_s.rename(columns={"狀態": "課程類別"}, inplace=True)
+        # 補齊
         for c in SCHEMA[STU_FILE]: 
             if c not in df_s.columns: 
                 if c == "購買堂數": df_s[c] = 0
@@ -73,7 +75,9 @@ def load_and_fix_data():
 df_db, df_stu, df_req, df_cat = load_and_fix_data()
 
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
-ALL_CATEGORIES = df_cat["類別名稱"].tolist() if not ALL_CATEGORIES: ALL_CATEGORIES = ["(請設定)"]
+
+# 修正處：這裡修正了語法錯誤
+ALL_CATEGORIES = df_cat["類別名稱"].tolist() if not df_cat.empty else ["(請設定)"]
 
 # ==================== 2. 全域大日曆 ====================
 st.subheader("🗓️ 課程總覽")
@@ -83,9 +87,10 @@ for _, row in df_db.iterrows():
     if pd.isna(row['日期']): continue
     
     cat_str = str(row['課程種類'])
-    if "MA" in cat_str: theme_color = "#D32F2F"
-    elif "S" in cat_str: theme_color = "#1976D2"
-    elif "一般" in cat_str: theme_color = "#388E3C"
+    # 顏色邏輯
+    if "MA" in cat_str: theme_color = "#D32F2F" # 紅
+    elif "S" in cat_str: theme_color = "#1976D2" # 藍
+    elif "一般" in cat_str: theme_color = "#388E3C" # 綠
     else: theme_color = "#555555"
     
     try:
@@ -134,14 +139,13 @@ calendar_options = {
         "listMonth": { "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" } }
     }
 }
-calendar(events=events, options=calendar_options, key="cal_v23_date_res")
+calendar(events=events, options=calendar_options, key="cal_v24_syntax_fix")
 st.divider()
 
 # ==================== 3. 身份導覽 ====================
 mode = st.radio("", ["🔍 學員查詢", "🔧 教練後台"], horizontal=True)
 
 if mode == "🔍 學員查詢":
-    # 這裡的日期是用來「查詢課表」的
     sel_date = st.date_input("查詢日期", date.today())
     day_view = df_db[df_db["日期"] == sel_date].sort_values("時間")
     
@@ -164,13 +168,12 @@ if mode == "🔍 學員查詢":
         
     with st.expander("📝 預約/留言"):
         with st.form("req"):
-            # V23 更新：加入日期選擇
+            # 預約功能：保留指定日期
             req_date = st.date_input("預約日期", value=sel_date)
             un = st.text_input("姓名", value=s_name if student_list else "")
             ut = st.selectbox("時段", [f"{h:02d}:00" for h in range(7, 23)])
             um = st.text_area("備註")
             if st.form_submit_button("送出", use_container_width=True):
-                # 存檔時使用「req_date」而不是查詢的「sel_date」
                 pd.concat([df_req, pd.DataFrame([{"日期":str(req_date),"時間":ut,"姓名":un,"留言":um}])]).to_csv(REQ_FILE, index=False)
                 st.success(f"已送出預約：{req_date} {ut}")
 
