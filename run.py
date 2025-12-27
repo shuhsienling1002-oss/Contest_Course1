@@ -10,10 +10,10 @@ except ImportError:
     st.error("請先安裝套件：pip install streamlit-calendar")
 
 # --- 1. 檔案設定 ---
-DB_FILE = "gym_lessons_v14.csv"
-REQ_FILE = "gym_requests_v14.csv"
-STU_FILE = "gym_students_v14.csv"
-CAT_FILE = "gym_categories_v14.csv"
+DB_FILE = "gym_lessons_v15.csv"
+REQ_FILE = "gym_requests_v15.csv"
+STU_FILE = "gym_students_v15.csv"
+CAT_FILE = "gym_categories_v15.csv"
 COACH_PASSWORD = "1234"
 
 st.set_page_config(page_title="林芸健身", layout="wide", initial_sidebar_state="collapsed")
@@ -60,18 +60,12 @@ for _, row in df_db.iterrows():
     })
 
 # --- B. 加入國定假日 (紅色全天標記) ---
-# 這裡加入跨年度的假日，確保您現在看得到
 holidays = [
-    # 2025 年末
     {"start": "2025-12-31", "title": "跨年夜(補)"},
-    
-    # 2026 年初 (預估)
     {"start": "2026-01-01", "title": "元旦"},
-    {"start": "2026-02-17", "end": "2026-02-23", "title": "春節連假"}, # 農曆除夕是 2/17
+    {"start": "2026-02-17", "end": "2026-02-23", "title": "春節連假"},
     {"start": "2026-02-28", "title": "228紀念日"},
     {"start": "2026-04-04", "end": "2026-04-07", "title": "清明連假"},
-    
-    # 2025 年回顧 (如果您往回翻)
     {"start": "2025-01-01", "title": "元旦"},
     {"start": "2025-01-25", "end": "2025-02-03", "title": "春節"},
     {"start": "2025-02-28", "title": "228"},
@@ -88,23 +82,24 @@ for h in holidays:
         "start": h["start"],
         "end": h.get("end"),
         "allDay": True,
-        "backgroundColor": "#D32F2F", # 鮮豔紅
+        "backgroundColor": "#D32F2F",
         "borderColor": "#D32F2F",
-        "display": "block", # 顯示為色塊條
-        "classNames": ["holiday-event"] # 標記類別
+        "display": "block",
+        "classNames": ["holiday-event"]
     })
 
-# --- C. 日曆設定 (關鍵修改) ---
+# --- C. 日曆設定 (精準修復) ---
 calendar_options = {
     "editable": False,
     "headerToolbar": {
         "left": "prev,next", 
         "center": "title",
-        # 1. 保留您要的三視圖 + 手機列表
         "right": "dayGridMonth,timeGridWeek,timeGridDay,listMonth" 
     },
-    # 2. 徹底移除「日」字：使用英文核心，但手動改中文按鈕
+    # 這裡維持英文核心，確保格子只有數字 1, 2, 3
     "locale": "en", 
+    
+    # 手動中文化按鈕
     "buttonText": {
         "today": "今",
         "month": "月", 
@@ -112,8 +107,21 @@ calendar_options = {
         "day": "日", 
         "list": "清單"
     },
-    # 3. 周視圖標題格式簡化 (顯示 Sun 1, Mon 2...)
-    "dayHeaderFormat": {"weekday": "short", "day": "numeric", "omitCommas": True},
+    
+    # ⚠️ 關鍵修正：針對不同視圖給予不同標題格式
+    "views": {
+        # 月視圖：只顯示星期幾 (Sun, Mon...)，不要數字！
+        "dayGridMonth": {
+            "dayHeaderFormat": {"weekday": "short"} 
+        },
+        # 周/日視圖：顯示星期+日期 (Mon 12/27)，這樣才清楚
+        "timeGridWeek": {
+            "dayHeaderFormat": {"weekday": "short", "day": "numeric", "omitCommas": True}
+        },
+        "timeGridDay": {
+            "dayHeaderFormat": {"weekday": "long", "day": "numeric", "omitCommas": True}
+        }
+    },
     
     "initialView": "dayGridMonth",
     "height": 550,
@@ -122,7 +130,7 @@ calendar_options = {
     "firstDay": 1, # 週一開始
 }
 
-calendar(events=events, options=calendar_options, key="final_cal")
+calendar(events=events, options=calendar_options, key="final_cal_fix")
 st.divider()
 
 # ==================== 3. 身份導覽 (維持手機極簡) ====================
