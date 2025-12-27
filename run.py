@@ -10,10 +10,10 @@ except ImportError:
     st.error("請先安裝套件：pip install streamlit-calendar")
 
 # --- 1. 檔案設定 (完全保留) ---
-DB_FILE = "gym_lessons_v12.csv"
-REQ_FILE = "gym_requests_v12.csv"
-STU_FILE = "gym_students_v12.csv"
-CAT_FILE = "gym_categories_v12.csv"
+DB_FILE = "gym_lessons_v13.csv"
+REQ_FILE = "gym_requests_v13.csv"
+STU_FILE = "gym_students_v13.csv"
+CAT_FILE = "gym_categories_v13.csv"
 COACH_PASSWORD = "1234"
 
 st.set_page_config(page_title="林芸健身", layout="wide", initial_sidebar_state="collapsed")
@@ -38,7 +38,7 @@ df_cat = pd.read_csv(CAT_FILE)
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
 ALL_CATEGORIES = df_cat["類別名稱"].tolist() if not df_cat.empty else ["(請設定)"]
 
-# ==================== 2. 全域大日曆 (視覺優化) ====================
+# ==================== 2. 全域大日曆 (修復崩潰) ====================
 st.subheader("🗓️ 課程總覽")
 
 events = []
@@ -46,10 +46,10 @@ events = []
 # --- A. 加入課程資料 ---
 for _, row in df_db.iterrows():
     cat_str = str(row['課程種類'])
-    color = "#33b5e5" # 預設藍
-    if "MA" in cat_str: color = "#FF4B4B" # 紅
-    elif "S" in cat_str: color = "#3D9DF3" # 深藍
-    elif "一般" in cat_str: color = "#2E8B57" # 綠
+    color = "#33b5e5" 
+    if "MA" in cat_str: color = "#FF4B4B" 
+    elif "S" in cat_str: color = "#3D9DF3" 
+    elif "一般" in cat_str: color = "#2E8B57" 
     
     events.append({
         "title": f"{row['時間']} {row['學員']}",
@@ -60,19 +60,15 @@ for _, row in df_db.iterrows():
     })
 
 # --- B. 加入 2025 台灣國定假日 (紅色標記) ---
-# 您可以隨時在這裡增加新的假日
 holidays = [
     {"start": "2025-01-01", "title": "元旦"},
-    {"start": "2025-01-25", "end": "2025-02-03", "title": "春節連假"}, # end 日期在日曆中是不包含的，所以寫到 2/3 會顯示到 2/2
+    {"start": "2025-01-25", "end": "2025-02-03", "title": "春節連假"},
     {"start": "2025-02-28", "title": "和平紀念日"},
-    {"start": "2025-04-03", "end": "2025-04-07", "title": "兒童節/清明連假"},
+    {"start": "2025-04-03", "end": "2025-04-07", "title": "清明連假"},
     {"start": "2025-05-01", "title": "勞動節"},
     {"start": "2025-05-30", "end": "2025-06-02", "title": "端午連假"},
     {"start": "2025-10-04", "end": "2025-10-07", "title": "中秋連假"},
     {"start": "2025-10-10", "end": "2025-10-13", "title": "國慶連假"},
-    # 預先加幾個 2026 的讓您看效果 (參考您的截圖)
-    {"start": "2026-02-15", "end": "2026-02-21", "title": "春節 (預估)"},
-    {"start": "2026-02-28", "title": "228 紀念日"}
 ]
 
 for h in holidays:
@@ -80,19 +76,18 @@ for h in holidays:
         "title": h["title"],
         "start": h["start"],
         "end": h.get("end"),
-        "allDay": True, # 全天事件
-        "backgroundColor": "#D32F2F", # 假日用深紅色
+        "allDay": True,
+        "backgroundColor": "#D32F2F", # 深紅
         "borderColor": "#D32F2F",
-        "display": "block" # 顯示文字區塊
+        "display": "block"
     })
 
-# --- C. 日曆設定 (針對您的需求修改) ---
+# --- C. 日曆設定 (移除導致崩潰的設定) ---
 calendar_options = {
     "editable": False,
     "headerToolbar": {
         "left": "prev,next", 
         "center": "title",
-        # 1. 月、日、周 都要有 (外加 list 是手機好用，我幫您留著)
         "right": "dayGridMonth,timeGridWeek,timeGridDay,listMonth" 
     },
     "buttonText": {
@@ -101,17 +96,15 @@ calendar_options = {
         "day": "日", 
         "list": "清單"
     },
-    # 2. 移除「日」文字，只顯示數字
-    "dayCellContent": {"numeric": "day"}, 
-    
+    # ⚠️ 關鍵修正：移除了 dayCellContent，這是導致 React Error #31 的元兇
     "initialView": "dayGridMonth",
-    "height": 550, # 稍微調高一點讓假日顯示清楚
-    "locale": "zh-tw",
-    "slotMinTime": "06:00:00", # 周/日視圖從早上6點開始
+    "height": 550,
+    "locale": "zh-tw", # 設定中文，通常預設就不會顯示「日」字
+    "slotMinTime": "06:00:00",
     "slotMaxTime": "23:00:00",
 }
 
-calendar(events=events, options=calendar_options, key="mobile_cal")
+calendar(events=events, options=calendar_options, key="mobile_cal_fixed")
 st.divider()
 
 # ==================== 3. 身份導覽 (完全保留) ====================
