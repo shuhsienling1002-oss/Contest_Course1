@@ -9,11 +9,11 @@ try:
 except ImportError:
     st.error("請先安裝套件：pip install streamlit-calendar")
 
-# --- 1. 檔案設定 (V18) ---
-DB_FILE = "gym_lessons_v18.csv"
-REQ_FILE = "gym_requests_v18.csv"
-STU_FILE = "gym_students_v18.csv"
-CAT_FILE = "gym_categories_v18.csv"
+# --- 1. 檔案設定 (維持不變) ---
+DB_FILE = "gym_lessons_v19.csv"
+REQ_FILE = "gym_requests_v19.csv"
+STU_FILE = "gym_students_v19.csv"
+CAT_FILE = "gym_categories_v19.csv"
 COACH_PASSWORD = "1234"
 
 st.set_page_config(page_title="林芸健身", layout="wide", initial_sidebar_state="collapsed")
@@ -45,7 +45,7 @@ df_db, df_stu, df_req, df_cat = load_data()
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
 ALL_CATEGORIES = df_cat["類別名稱"].tolist() if not df_cat.empty else ["(請設定)"]
 
-# ==================== 2. 全域大日曆 (潔淨修復版) ====================
+# ==================== 2. 全域大日曆 (視覺優化：白底彩字) ====================
 st.subheader("🗓️ 課程總覽")
 
 events = []
@@ -55,24 +55,34 @@ for _, row in df_db.iterrows():
     if pd.isna(row['日期']): continue
     
     cat_str = str(row['課程種類'])
-    color = "#33b5e5" 
-    if "MA" in cat_str: color = "#FF4B4B" 
-    elif "S" in cat_str: color = "#3D9DF3" 
-    elif "一般" in cat_str: color = "#2E8B57" 
+    
+    # 設定顏色邏輯：這次是設定「字體顏色 (textColor)」
+    if "MA" in cat_str: 
+        theme_color = "#D32F2F" # 紅色
+    elif "S" in cat_str: 
+        theme_color = "#1976D2" # 藍色
+    elif "一般" in cat_str: 
+        theme_color = "#388E3C" # 綠色
+    else:
+        theme_color = "#555555" # 其他灰黑
     
     try:
         start_h = int(str(row['時間']).split(':')[0])
         end_h = start_h + 1
         events.append({
-            "title": f"{row['時間']} {row['學員']}",
+            # 修正：標題只放名字，避免重複顯示時間
+            "title": f"{row['學員']}", 
             "start": f"{row['日期']}T{start_h:02d}:00:00",
             "end": f"{row['日期']}T{end_h:02d}:00:00",
-            "backgroundColor": color,
-            "borderColor": color,
+            
+            # 視覺設定：背景白，字體彩色，邊框彩色
+            "backgroundColor": "#FFFFFF", 
+            "textColor": theme_color,     
+            "borderColor": theme_color,
         })
     except: continue
 
-# --- B. 加入國定假日 ---
+# --- B. 加入國定假日 (維持紅底白字) ---
 holidays = [
     {"start": "2025-12-31", "title": "跨年夜(補)"},
     {"start": "2026-01-01", "title": "元旦"},
@@ -89,12 +99,13 @@ for h in holidays:
         "start": h["start"],
         "end": h.get("end"),
         "allDay": True,
-        "backgroundColor": "#D32F2F",
+        "backgroundColor": "#D32F2F", # 假日維持顯眼的全紅
         "borderColor": "#D32F2F",
+        "textColor": "#FFFFFF",
         "display": "block",
     })
 
-# --- C. 日曆設定 (解決所有問題的關鍵配置) ---
+# --- C. 日曆設定 (保留所有設定) ---
 calendar_options = {
     "editable": False,
     "headerToolbar": {
@@ -102,38 +113,35 @@ calendar_options = {
         "center": "title",
         "right": "dayGridMonth,timeGridWeek,timeGridDay,listMonth" 
     },
-    
-    # 1. 使用英文核心：這是唯一能徹底拿掉「日」字的方法
-    "locale": "en",
-    
-    # 2. 手動中文化按鈕：雖然核心是英文，但按鈕我們改成中文
+    "locale": "en", # 維持英文核心（確保無「日」字）
     "buttonText": {
-        "today": "今天",
-        "month": "月", "week": "周", "day": "日", "list": "清單"
+        "today": "今天", "month": "月", "week": "周", "day": "日", "list": "清單"
     },
-    
-    # 3. 關鍵修復：這裡設定月曆標題只顯示 Mon, Tue...
-    # 絕對不加 'day': 'numeric'，這樣就不會出現奇怪的數字了！
-    "dayHeaderFormat": { "weekday": "short" }, 
-    
+    "dayHeaderFormat": { "weekday": "short" }, # 標題只顯示 Mon, Tue
     "initialView": "dayGridMonth",
     "height": 550,
     "slotMinTime": "06:00:00",
     "slotMaxTime": "23:00:00",
     "firstDay": 1,
     
-    # 4. 讓清單模式盡量整齊
+    # 時間格式優化：顯示 11:00 而不是 11a
+    "eventTimeFormat": {
+        "hour": "2-digit",
+        "minute": "2-digit",
+        "hour12": False
+    },
+    
     "views": {
         "listMonth": {
-            "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" } # 12/31 Wed
+            "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" }
         }
     }
 }
 
-calendar(events=events, options=calendar_options, key="cal_v18_final")
+calendar(events=events, options=calendar_options, key="cal_v19_final")
 st.divider()
 
-# ==================== 3. 身份導覽 ====================
+# ==================== 3. 身份導覽 (保留完整功能) ====================
 mode = st.radio("", ["🔍 學員查詢", "🔧 教練後台"], horizontal=True)
 
 # --- A. 學員區 ---
@@ -143,7 +151,9 @@ if mode == "🔍 學員查詢":
     
     if not day_view.empty:
         for _, row in day_view.iterrows():
-            st.info(f"🕒 **{row['時間']}**　👤 **{row['學員']}**\n\n📌 {row['課程種類']}")
+            # 這裡也同步一下顏色邏輯 (用 emoji 區分)
+            icon = "🔴" if "MA" in str(row['課程種類']) else ("🔵" if "S" in str(row['課程種類']) else "🟢")
+            st.info(f"{icon} **{row['時間']}**　👤 **{row['學員']}**\n\n📌 {row['課程種類']}")
     else:
         st.write("🍵 本日無課")
     
@@ -180,6 +190,7 @@ else:
                 t = st.selectbox("時間", [f"{h:02d}:00" for h in range(7, 23)])
                 s = st.selectbox("學員", ["(選學員)"] + student_list)
                 
+                # 保留防呆鎖定邏輯
                 opts = ALL_CATEGORIES
                 if s != "(選學員)":
                     rec = df_stu[df_stu["姓名"] == s]
