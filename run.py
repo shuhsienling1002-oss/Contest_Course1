@@ -10,10 +10,10 @@ except ImportError:
     st.error("請在終端機執行 'pip install streamlit-calendar' 以啟用日曆！")
 
 # --- 1. 系統安全性與檔案設定 ---
-DB_FILE = "gym_lessons_v7.csv"
-REQ_FILE = "gym_req_v7.csv"
-STU_FILE = "gym_students_v7.csv"
-COACH_PASSWORD = "1234"  # 👈 預設密碼已更新為 1234
+DB_FILE = "gym_lessons.csv"
+REQ_FILE = "gym_requests.csv"
+STU_FILE = "gym_students.csv"
+COACH_PASSWORD = "1234"  # 預設教練密碼
 
 st.set_page_config(page_title="林芸健身專業管理系統", layout="wide")
 
@@ -33,22 +33,42 @@ df_stu = pd.read_csv(STU_FILE)
 df_req = pd.read_csv(REQ_FILE)
 student_options = df_stu["姓名"].tolist() if not df_stu.empty else ["(請先在後台新增學員)"]
 
-# ==================== 2. 全域大日曆 (所有人皆可見) ====================
-st.header("🗓️ 林芸健身課程全月總覽")
-st.info("💡 藍色標記為一般課程，紅色標記為 MA 體態課程。")
+# ==================== 2. 全域大日曆 (含 月/周/日 切換) ====================
+st.header("🗓️ 林芸健身課程總覽")
+st.info("💡 藍色標記為一般課程，紅色標記為 MA 體態課程。請使用右上角按鈕切換檢視模式。")
 
 events = []
 for _, row in df_db.iterrows():
     color = "#FF4B4B" if "MA" in str(row['課程種類']) else "#3D9DF3"
     events.append({
-        "title": f"{row['時間']} {row['學員']}",
+        "title": f"{row['學員']}", # 簡化標題，因為周/日視圖已有時間軸
         "start": f"{row['日期']}T{row['時間']}:00",
+        "end": f"{row['日期']}T{int(row['時間'][:2])+1}:00:00", # 預設一小時
         "backgroundColor": color,
         "borderColor": color,
     })
 
-# 顯示唯讀日曆
-calendar(events=events, options={"initialView": "dayGridMonth", "editable": False}, key="global_calendar")
+# --- 日曆核心設定 (修改重點) ---
+calendar_options = {
+    "editable": False, # 學員只能看，不能拖拉
+    "headerToolbar": {
+        "left": "prev,next today",
+        "center": "title",
+        "right": "dayGridMonth,timeGridWeek,timeGridDay" # 這裡加入了 月、周、日
+    },
+    "buttonText": {
+        "today": "今天",
+        "month": "月",
+        "week": "周",
+        "day": "日"
+    },
+    "initialView": "dayGridMonth",
+    "slotMinTime": "06:00:00", # 優化：周/日視圖從早上 6 點開始顯示
+    "slotMaxTime": "23:00:00", # 優化：顯示到晚上 11 點
+    "locale": "zh-tw", # 設定為繁體中文
+}
+
+calendar(events=events, options=calendar_options, key="global_calendar")
 
 st.divider()
 
