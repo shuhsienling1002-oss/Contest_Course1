@@ -12,11 +12,12 @@ try:
 except ImportError:
     st.error("請先安裝套件：pip install streamlit-calendar")
 
-# --- 1. 檔案設定 (固定檔名) ---
+# --- 1. 檔案設定 (新增行事曆檔案) ---
 DB_FILE = "gym_lessons.csv"
 REQ_FILE = "gym_requests.csv"
 STU_FILE = "gym_students.csv"
 CAT_FILE = "gym_categories.csv"
+COACH_EVT_FILE = "gym_coach_events.csv" # 新增：教練行事曆資料
 COACH_PASSWORD = "1234"
 
 st.set_page_config(page_title="林芸健身", layout="wide", initial_sidebar_state="collapsed")
@@ -26,7 +27,8 @@ SCHEMA = {
     DB_FILE: ["日期", "時間", "學員", "課程種類", "備註"],
     REQ_FILE: ["日期", "時間", "姓名", "留言"],
     STU_FILE: ["姓名", "購買堂數", "課程類別", "備註"],
-    CAT_FILE: ["類別名稱"]
+    CAT_FILE: ["類別名稱"],
+    COACH_EVT_FILE: ["日期", "時間", "事項", "類型", "備註"] # 新增欄位
 }
 
 # 初始化檔案
@@ -39,6 +41,7 @@ for f, cols in SCHEMA.items():
 
 # --- 資料讀取與自動修復 ---
 def load_and_fix_data():
+    # 1. 課程
     try:
         df_d = pd.read_csv(DB_FILE)
         for c in SCHEMA[DB_FILE]: 
@@ -46,9 +49,9 @@ def load_and_fix_data():
         df_d["日期"] = pd.to_datetime(df_d["日期"], errors='coerce').dt.date
     except: df_d = pd.DataFrame(columns=SCHEMA[DB_FILE])
 
+    # 2. 學員
     try:
         df_s = pd.read_csv(STU_FILE)
-        # 舊欄位遷移
         if "剩餘堂數" in df_s.columns and "購買堂數" not in df_s.columns:
             df_s.rename(columns={"剩餘堂數": "購買堂數"}, inplace=True)
         if "狀態" in df_s.columns and "課程類別" not in df_s.columns:
@@ -60,21 +63,31 @@ def load_and_fix_data():
         df_s = df_s[SCHEMA[STU_FILE]]
     except: df_s = pd.DataFrame(columns=SCHEMA[STU_FILE])
 
+    # 3. 留言
     try:
         df_r = pd.read_csv(REQ_FILE)
         for c in SCHEMA[REQ_FILE]: 
             if c not in df_r.columns: df_r[c] = ""
     except: df_r = pd.DataFrame(columns=SCHEMA[REQ_FILE])
 
+    # 4. 類別
     try:
         df_c = pd.read_csv(CAT_FILE)
         if df_c.empty or "類別名稱" not in df_c.columns:
             df_c = pd.DataFrame({"類別名稱": ["MA 體態", "S 專項"]})
     except: df_c = pd.DataFrame({"類別名稱": ["MA 體態", "S 專項"]})
 
-    return df_d, df_s, df_r, df_c
+    # 5. 教練行事曆 (新)
+    try:
+        df_e = pd.read_csv(COACH_EVT_FILE)
+        for c in SCHEMA[COACH_EVT_FILE]:
+            if c not in df_e.columns: df_e[c] = ""
+        df_e["日期"] = pd.to_datetime(df_e["日期"], errors='coerce').dt.date
+    except: df_e = pd.DataFrame(columns=SCHEMA[COACH_EVT_FILE])
 
-df_db, df_stu, df_req, df_cat = load_and_fix_data()
+    return df_d, df_s, df_r, df_c, df_e
+
+df_db, df_stu, df_req, df_cat, df_evt = load_and_fix_data()
 
 student_list = df_stu["姓名"].tolist() if not df_stu.empty else []
 
@@ -101,11 +114,11 @@ def get_category_color(cat_name):
     return palette[hash_val % len(palette)]
 
 events = []
+
+# A. 加入課程資料 (白底彩字)
 for _, row in df_db.iterrows():
     if pd.isna(row['日期']): continue
-    
     theme_color = get_category_color(row['課程種類'])
-    
     try:
         start_h = int(str(row['時間']).split(':')[0])
         end_h = start_h + 1
@@ -119,6 +132,42 @@ for _, row in df_db.iterrows():
         })
     except: continue
 
+# B. 加入教練行事曆 (實心色塊)
+for _, row in df_evt.iterrows():
+    if pd.isna(row['日期']): continue
+    
+    # 設定行事曆顏色
+    if row['類型'] == "排休":
+        evt_color = "#757575" # 灰色
+    elif row['類型'] == "請假":
+        evt_color = "#FF9800" # 橘色
+    else:
+        evt_color = "#9C27B0" # 紫色 (其他)
+    
+    # 判斷是否為全天
+    is_all_day = (row['時間'] == "全天")
+    
+    evt_obj = {
+        "title": f"{row['事項']} ({row['類型']})",
+        "start": f"{row['日期']}",
+        "backgroundColor": evt_color,
+        "borderColor": evt_color,
+        "textColor": "#FFFFFF", # 白字
+        "allDay": is_all_day
+    }
+    
+    if not is_all_day:
+        try:
+            start_h = int(str(row['時間']).split(':')[0])
+            evt_obj["start"] = f"{row['日期']}T{start_h:02d}:00:00"
+            evt_obj["end"] = f"{row['日期']}T{start_h+1:02d}:00:00" # 預設1小時，可視需求調整
+            evt_obj["allDay"] = False
+        except: 
+            evt_obj["allDay"] = True # 時間格式錯就變全天
+            
+    events.append(evt_obj)
+
+# C. 國定假日
 holidays = [
     {"start": "2025-12-31", "title": "跨年夜(補)"},
     {"start": "2026-01-01", "title": "元旦"},
@@ -152,7 +201,7 @@ calendar_options = {
         "listMonth": { "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" } }
     }
 }
-calendar(events=events, options=calendar_options, key="cal_v29_stats")
+calendar(events=events, options=calendar_options, key="cal_v30_coach_evt")
 st.divider()
 
 # ==================== 3. 身份導覽 ====================
@@ -197,8 +246,8 @@ if mode == "🔍 學員查詢":
 else:
     pwd = st.text_input("密碼", type="password")
     if pwd == COACH_PASSWORD:
-        # 新增第七個分頁：統計報表
-        t1, t2, t3, t4, t5, t6, t7 = st.tabs(["排課", "編輯", "名單", "設定", "留言", "💾 備份", "📊 統計報表"])
+        # 新增分頁：行事曆登記
+        t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["排課", "編輯", "名單", "設定", "留言", "📅 行事曆登記", "📊 報表", "💾 備份"])
         
         with t1:
             st.caption("🚀 快速排課")
@@ -225,41 +274,26 @@ else:
                     else: st.error("未選人")
 
         with t2:
-            st.info("💡 操作教學：勾選左側框框後按 Delete 鍵即可刪除，完成後記得按『儲存』。")
+            st.info("💡 課程編輯區")
             ed = st.date_input("修課日期", date.today())
             mask = df_db["日期"] == ed
             edited = st.data_editor(
-                df_db[mask], 
-                num_rows="dynamic", 
-                use_container_width=True, 
-                column_config={
-                    "課程種類": st.column_config.SelectboxColumn("項目", options=ALL_CATEGORIES),
-                    "備註": "備註", 
-                    "學員": "姓名"
-                }
+                df_db[mask], num_rows="dynamic", use_container_width=True, 
+                column_config={"課程種類": st.column_config.SelectboxColumn("項目", options=ALL_CATEGORIES)}
             )
-            if st.button("💾 儲存", use_container_width=True):
+            if st.button("💾 儲存課程", use_container_width=True):
                 pd.concat([df_db[~mask], edited], ignore_index=True).to_csv(DB_FILE, index=False); st.rerun()
 
         with t3:
-            st.caption("設定學員額度與綁定項目")
-            estu = st.data_editor(
-                df_stu, 
-                num_rows="dynamic", 
-                use_container_width=True, 
-                column_config={
-                    "姓名": "姓名",
-                    "課程類別": st.column_config.SelectboxColumn("綁定項目", options=ALL_CATEGORIES, required=True),
-                    "購買堂數": st.column_config.NumberColumn("額度", min_value=0),
-                    "備註": "備註"
-                }
-            )
+            st.caption("設定學員")
+            estu = st.data_editor(df_stu, num_rows="dynamic", use_container_width=True, 
+                column_config={"課程類別": st.column_config.SelectboxColumn("綁定項目", options=ALL_CATEGORIES)})
             if st.button("💾 更新名單", use_container_width=True):
                 estu.to_csv(STU_FILE, index=False); st.rerun()
 
         with t4:
-            st.caption("自訂課程項目")
-            ecat = st.data_editor(df_cat, num_rows="dynamic", use_container_width=True, column_config={"類別名稱":"項目名稱"})
+            st.caption("自訂課程")
+            ecat = st.data_editor(df_cat, num_rows="dynamic", use_container_width=True)
             if st.button("💾 更新項目", use_container_width=True):
                 ecat.to_csv(CAT_FILE, index=False); st.rerun()
 
@@ -268,57 +302,65 @@ else:
             if st.button("🗑️ 清空", use_container_width=True):
                 pd.DataFrame(columns=["日期", "時間", "姓名", "留言"]).to_csv(REQ_FILE, index=False); st.rerun()
 
+        # 新增：教練行事曆登記
         with t6:
-            st.subheader("💾 資料庫管理")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("### 1️⃣ 備份下載")
-                buf = io.BytesIO()
-                with zipfile.ZipFile(buf, "x", zipfile.ZIP_DEFLATED) as zf:
-                    for f in [DB_FILE, REQ_FILE, STU_FILE, CAT_FILE]:
-                        if os.path.exists(f): zf.write(f)
-                st.download_button(label="⬇️ 下載備份 ZIP", data=buf.getvalue(), file_name=f"gym_backup_{datetime.now().strftime('%Y%m%d_%H%M')}.zip", mime="application/zip", type="primary")
-            with c2:
-                st.markdown("### 2️⃣ 系統還原")
-                uploaded_zip = st.file_uploader("上傳備份檔 (ZIP)", type="zip")
-                if uploaded_zip is not None:
-                    if st.button("🚨 確認還原", type="secondary"):
-                        try:
-                            with zipfile.ZipFile(uploaded_zip, "r") as z: z.extractall(".")
-                            st.success("✅ 還原成功！"); st.rerun()
-                        except Exception as e: st.error(f"失敗：{e}")
+            st.subheader("📅 行事曆登記 (排休/請假)")
+            with st.container(border=True):
+                c1, c2, c3 = st.columns(3)
+                evt_d = c1.date_input("日期", date.today(), key="evt_d")
+                evt_type = c2.selectbox("類型", ["排休", "請假", "其他"], key="evt_type")
+                is_all_day = c3.checkbox("全天行程", value=True)
+                
+                if not is_all_day:
+                    evt_t = st.selectbox("時間", [f"{h:02d}:00" for h in range(7, 23)], key="evt_t")
+                else:
+                    evt_t = "全天"
+                
+                evt_title = st.text_input("事項說明 (例如: 看牙醫)", key="evt_title")
+                
+                if st.button("➕ 新增行程", use_container_width=True):
+                    new_evt = pd.DataFrame([{"日期": evt_d, "時間": evt_t, "事項": evt_title, "類型": evt_type, "備註": ""}])
+                    pd.concat([df_evt, new_evt], ignore_index=True).to_csv(COACH_EVT_FILE, index=False)
+                    st.success("已登記！"); st.rerun()
+            
+            st.divider()
+            st.write("📋 **已登記行程 (可編輯/刪除)**")
+            # 顯示現有行程供編輯
+            edited_evt = st.data_editor(df_evt, num_rows="dynamic", use_container_width=True)
+            if st.button("💾 儲存行程變更", use_container_width=True):
+                edited_evt.to_csv(COACH_EVT_FILE, index=False)
+                st.success("更新成功"); st.rerun()
 
-        # 新增：統計報表功能
         with t7:
-            st.subheader("📊 每月課程統計")
+            st.subheader("📊 統計報表")
             if not df_db.empty:
-                # 1. 資料處理
                 df_stat = df_db.copy()
                 df_stat["日期"] = pd.to_datetime(df_stat["日期"])
                 df_stat["月份"] = df_stat["日期"].dt.strftime("%Y-%m")
-                
-                # 2. 樞紐分析表：計算各課程數
-                # index=月份, columns=課程種類, values=計數
                 pivot = df_stat.pivot_table(index="月份", columns="課程種類", values="學員", aggfunc="count", fill_value=0)
-                
-                # 3. 計算每月總堂數 (新增 Total 欄位)
-                pivot["👉 每月總堂數"] = pivot.sum(axis=1)
-                
-                # 4. 排序 (月份由新到舊)
-                pivot = pivot.sort_index(ascending=False)
-                
-                # 5. 顯示表格
-                st.dataframe(pivot, use_container_width=True)
-                
-                # 6. 視覺化圖表 (選用)
-                st.caption("📈 每月總堂數趨勢")
-                st.bar_chart(pivot["👉 每月總堂數"])
-            else:
-                st.info("目前還沒有課程資料，排課後這裡會自動顯示統計數據。")
+                pivot["👉 總計"] = pivot.sum(axis=1)
+                st.dataframe(pivot.sort_index(ascending=False), use_container_width=True)
+                st.bar_chart(pivot["👉 總計"])
+            else: st.info("尚無數據")
+
+        with t8:
+            st.subheader("💾 備份管理")
+            c1, c2 = st.columns(2)
+            with c1:
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, "x", zipfile.ZIP_DEFLATED) as zf:
+                    for f in [DB_FILE, REQ_FILE, STU_FILE, CAT_FILE, COACH_EVT_FILE]:
+                        if os.path.exists(f): zf.write(f)
+                st.download_button("⬇️ 下載備份", buf.getvalue(), f"backup_{datetime.now().strftime('%m%d')}.zip", "application/zip", "primary")
+            with c2:
+                up_zip = st.file_uploader("上傳還原", type="zip")
+                if up_zip and st.button("🚨 還原"):
+                    with zipfile.ZipFile(up_zip, "r") as z: z.extractall(".")
+                    st.success("成功！"); st.rerun()
 
     elif pwd != "": st.error("密碼錯誤")
 
 if st.button("⚠️ 重置"):
-    for f in [DB_FILE, REQ_FILE, STU_FILE, CAT_FILE]:
+    for f in [DB_FILE, REQ_FILE, STU_FILE, CAT_FILE, COACH_EVT_FILE]:
         if os.path.exists(f): os.remove(f)
     st.rerun()
