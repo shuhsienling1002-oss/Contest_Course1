@@ -4,7 +4,7 @@ import os
 import hashlib
 import zipfile 
 import io      
-from datetime import datetime, date
+from datetime import datetime, date, time
 
 # 嘗試載入日曆組件
 try:
@@ -114,12 +114,21 @@ for _, row in df_db.iterrows():
     if pd.isna(row['日期']): continue
     theme_color = get_category_color(row['課程種類'])
     try:
-        start_h = int(str(row['時間']).split(':')[0])
-        end_h = start_h + 1
+        # 支援半點時間處理 (例如 07:30)
+        t_str = str(row['時間'])
+        parts = t_str.split(':')
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        
+        start_iso = f"{row['日期']}T{h:02d}:{m:02d}:00"
+        # 結束時間預設+1小時
+        end_h = h + 1
+        end_iso = f"{row['日期']}T{end_h:02d}:{m:02d}:00"
+        
         events.append({
             "title": f"{row['學員']}",
-            "start": f"{row['日期']}T{start_h:02d}:00:00",
-            "end": f"{row['日期']}T{end_h:02d}:00:00",
+            "start": start_iso,
+            "end": end_iso,
             "backgroundColor": "#FFFFFF",
             "textColor": theme_color,
             "borderColor": theme_color,
@@ -131,14 +140,14 @@ for _, row in df_evt.iterrows():
     if pd.isna(row['日期']): continue
     
     if row['類型'] == "排休":
-        evt_color = "#757575" # 灰色
+        evt_color = "#757575"
     else:
-        evt_color = "#E65100" # 深橘色 (其他)
+        evt_color = "#E65100"
     
     is_all_day = (row['時間'] == "全天")
     
     evt_obj = {
-        "title": f"{row['事項']}", # 標題直接顯示事項
+        "title": f"{row['事項']}",
         "start": f"{row['日期']}",
         "backgroundColor": evt_color,
         "borderColor": evt_color,
@@ -148,9 +157,13 @@ for _, row in df_evt.iterrows():
     
     if not is_all_day:
         try:
-            start_h = int(str(row['時間']).split(':')[0])
-            evt_obj["start"] = f"{row['日期']}T{start_h:02d}:00:00"
-            evt_obj["end"] = f"{row['日期']}T{start_h+1:02d}:00:00"
+            t_str = str(row['時間'])
+            parts = t_str.split(':')
+            h = int(parts[0])
+            m = int(parts[1]) if len(parts) > 1 else 0
+            
+            evt_obj["start"] = f"{row['日期']}T{h:02d}:{m:02d}:00"
+            evt_obj["end"] = f"{row['日期']}T{h+1:02d}:{m:02d}:00"
             evt_obj["allDay"] = False
         except: 
             evt_obj["allDay"] = True
@@ -191,7 +204,7 @@ calendar_options = {
         "listMonth": { "listDayFormat": { "month": "numeric", "day": "numeric", "weekday": "short" } }
     }
 }
-calendar(events=events, options=calendar_options, key="cal_v31_simple_evt")
+calendar(events=events, options=calendar_options, key="cal_v32_manual_time")
 st.divider()
 
 # ==================== 3. 身份導覽 ====================
@@ -242,7 +255,21 @@ else:
             st.caption("🚀 快速排課")
             with st.container(border=True):
                 d = st.date_input("日期", date.today())
-                t = st.selectbox("時間", [f"{h:02d}:00" for h in range(7, 23)])
+                
+                # --- V32 關鍵修改：雙模式時間選擇 ---
+                c_t1, c_t2 = st.columns([3, 1])
+                with c_t2:
+                    manual_time = st.checkbox("⏳ 手動輸入", help="勾選後可輸入 7:30 等非整點時間")
+                
+                with c_t1:
+                    if manual_time:
+                        # 手動模式：使用時間輸入框 (可打字，也可點選)
+                        t_obj = st.time_input("時間 (請輸入)", value=time(7, 30))
+                        t = t_obj.strftime("%H:%M")
+                    else:
+                        # 原始機制：下拉選單 (整點)
+                        t = st.selectbox("時間", [f"{h:02d}:00" for h in range(7, 23)])
+                
                 s = st.selectbox("學員", ["(選學員)"] + student_list)
                 
                 opts = ALL_CATEGORIES
@@ -259,29 +286,29 @@ else:
                         new_row = pd.DataFrame([{"日期": d, "時間": t, "學員": s, "課程種類": cat, "備註": ""}])
                         updated_df = pd.concat([df_db, new_row], ignore_index=True)
                         updated_df.to_csv(DB_FILE, index=False)
-                        st.success(f"已排：{s}"); st.rerun()
+                        st.success(f"已排：{s} ({t})"); st.rerun()
                     else: st.error("未選人")
 
         with t2:
-            st.info("💡 操作教學：勾選左側框框後按 Delete 鍵即可刪除，完成後記得按『儲存』。")
+            st.info("💡 編輯課程")
             ed = st.date_input("修課日期", date.today())
             mask = df_db["日期"] == ed
             edited = st.data_editor(
                 df_db[mask], num_rows="dynamic", use_container_width=True, 
                 column_config={"課程種類": st.column_config.SelectboxColumn("項目", options=ALL_CATEGORIES)}
             )
-            if st.button("💾 儲存", use_container_width=True):
+            if st.button("💾 儲存課程", use_container_width=True):
                 pd.concat([df_db[~mask], edited], ignore_index=True).to_csv(DB_FILE, index=False); st.rerun()
 
         with t3:
-            st.caption("設定學員額度與綁定項目")
+            st.caption("設定學員")
             estu = st.data_editor(df_stu, num_rows="dynamic", use_container_width=True, 
                 column_config={"姓名":"姓名","課程類別": st.column_config.SelectboxColumn("綁定項目", options=ALL_CATEGORIES)})
             if st.button("💾 更新名單", use_container_width=True):
                 estu.to_csv(STU_FILE, index=False); st.rerun()
 
         with t4:
-            st.caption("自訂課程項目")
+            st.caption("自訂課程")
             ecat = st.data_editor(df_cat, num_rows="dynamic", use_container_width=True)
             if st.button("💾 更新項目", use_container_width=True):
                 ecat.to_csv(CAT_FILE, index=False); st.rerun()
@@ -291,30 +318,32 @@ else:
             if st.button("🗑️ 清空", use_container_width=True):
                 pd.DataFrame(columns=["日期", "時間", "姓名", "留言"]).to_csv(REQ_FILE, index=False); st.rerun()
 
-        # Tab 6: 行事曆登記 (依需求簡化邏輯)
         with t6:
             st.subheader("📅 行事曆登記")
             with st.container(border=True):
                 c1, c2, c3 = st.columns(3)
                 evt_d = c1.date_input("日期", date.today(), key="evt_d")
-                # 簡化選單：只有排休與其他
                 evt_type = c2.selectbox("類型", ["排休", "其他"], key="evt_type")
                 is_all_day = c3.checkbox("全天", value=True)
                 
                 if not is_all_day:
-                    evt_t = st.selectbox("時間", [f"{h:02d}:00" for h in range(7, 23)], key="evt_t")
+                    # 這裡也同步加上手動輸入功能
+                    man_evt_t = c3.checkbox("手動時間", key="man_evt")
+                    if man_evt_t:
+                        evt_t_obj = st.time_input("時間", value=time(7, 30), key="evt_t_in")
+                        evt_t = evt_t_obj.strftime("%H:%M")
+                    else:
+                        evt_t = st.selectbox("時間", [f"{h:02d}:00" for h in range(7, 23)], key="evt_t")
                 else:
                     evt_t = "全天"
                 
-                # 智慧判斷：如果是排休，自動填寫；如果是其他，讓使用者填
                 if evt_type == "排休":
                     evt_title = "排休"
-                    st.info("📌 已設定為「排休」(無需填寫)")
+                    st.info("📌 已設定為「排休」")
                 else:
                     evt_title = st.text_input("請輸入事項說明", placeholder="例如: 看牙醫", key="evt_title")
                 
                 if st.button("➕ 新增行程", use_container_width=True):
-                    # 確保有內容
                     if evt_type == "其他" and not evt_title:
                         st.error("請輸入事項說明！")
                     else:
@@ -323,7 +352,6 @@ else:
                         st.success("已登記！"); st.rerun()
             
             st.divider()
-            st.write("📋 已登記行程")
             edited_evt = st.data_editor(df_evt, num_rows="dynamic", use_container_width=True)
             if st.button("💾 儲存行程", use_container_width=True):
                 edited_evt.to_csv(COACH_EVT_FILE, index=False); st.success("更新成功"); st.rerun()
